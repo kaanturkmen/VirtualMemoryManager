@@ -96,6 +96,10 @@ int main(int argc, const char *argv[])
   
   // Number of the next unallocated physical page in main memory
   unsigned char free_page = 0;
+
+  // Declaring pointers for the further memcpy call.
+  signed char *transfer_location_in_main_memory = 0;
+  signed char *data_location_in_backing_store = 0;
   
   while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
     total_addresses++;
@@ -117,7 +121,27 @@ int main(int argc, const char *argv[])
       
       // Page fault
       if (physical_page == -1) {
-          /* TODO */
+        // Incrementing page faults.
+        page_faults++;
+
+        // We will use a new physical page, so that we are making physical_page to show the free page number.
+        // Furthermore, after the assignment, we are incrementing the free_page value by 1 for the further use.
+        physical_page = free_page++;
+
+        // Transfer location in main memory is selected as starting position of main_memory array + (Physical Page * PAGE_SIZE)
+        // Physical Page * PAGE_SIZE would give us the number of next unallocated physical page.
+        // So that we will obtain a next place to write our data.
+        transfer_location_in_main_memory = main_memory + (physical_page * PAGE_SIZE);
+
+        // We will obtain data from backing store, to access the location of the data, we are getting the place where the backing
+        // data is stored. Then adding LOGICAL_PAGE * PAGE_SIZE to obtain where our data is located.
+        data_location_in_backing_store = backing + (logical_page * PAGE_SIZE);
+          
+        // Copy page from backing file into physical memory we are accessing the memory address where they are stored (backing pointer).
+        memcpy(transfer_location_in_main_memory, data_location_in_backing_store, PAGE_SIZE);
+
+        // Then adding the new item to the pagetable.
+        pagetable[logical_page] = physical_page;
       }
 
       add_to_tlb(logical_page, physical_page);
