@@ -12,11 +12,13 @@
 
 #define TLB_SIZE 16
 #define PAGES 1024
-#define PAGE_MASK /* TODO */
+#define PAGE_MASK 1023
+
+// For the PAGE_MASK we can either take 1047552 (1111 1111 1100 0000 0000) and apply it (and operation) directly to the logical adress, or we can take it as 1023 (0000 0000 0011 1111 1111) and shift bits then apply.
 
 #define PAGE_SIZE 1024
 #define OFFSET_BITS 10
-#define OFFSET_MASK /* TODO */
+#define OFFSET_MASK 1023
 
 #define MEMORY_SIZE PAGES * PAGE_SIZE
 
@@ -50,12 +52,18 @@ int max(int a, int b)
 
 /* Returns the physical address from TLB or -1 if not present. */
 int search_tlb(unsigned char logical_page) {
-    /* TODO */
+    for(int i = 0; i < TLB_SIZE; i++) {
+      if(tlb[i].logical == logical_page) return tlb[i].physical;
+    }
+
+    return -1;
 }
 
 /* Adds the specified mapping to the TLB, replacing the oldest mapping (FIFO replacement). */
 void add_to_tlb(unsigned char logical, unsigned char physical) {
-    /* TODO */
+  tlb[tlbindex % TLB_SIZE].logical = logical;
+  tlb[tlbindex % TLB_SIZE].physical = physical;
+  tlbindex++;
 }
 
 int main(int argc, const char *argv[])
@@ -93,10 +101,9 @@ int main(int argc, const char *argv[])
     total_addresses++;
     int logical_address = atoi(buffer);
 
-    /* TODO 
-    / Calculate the page offset and logical page number from logical_address */
-    int offset =
-    int logical_page =
+    // Calculate the page offset and logical page number from logical_address */
+    int offset = logical_address & OFFSET_MASK;
+    int logical_page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
     ///////
     
     int physical_page = search_tlb(logical_page);
