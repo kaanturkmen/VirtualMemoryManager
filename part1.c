@@ -61,7 +61,9 @@ int search_tlb(unsigned char logical_page) {
 
 /* Adds the specified mapping to the TLB, replacing the oldest mapping (FIFO replacement). */
 void add_to_tlb(unsigned char logical, unsigned char physical) {
-    /* TODO */
+  tlb[tlbindex % TLB_SIZE].logical = logical;
+  tlb[tlbindex % TLB_SIZE].physical = physical;
+  tlbindex++;
 }
 
 int main(int argc, const char *argv[])
