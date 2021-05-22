@@ -30,6 +30,9 @@ struct tlbentry {
   unsigned char physical;
 };
 
+// Creating program mode variable to understand which algorithm is going to used.
+int program_mode = 0;
+
 // TLB is kept track of as a circular array, with the oldest element being overwritten once the TLB is full.
 struct tlbentry tlb[TLB_SIZE];
 // number of inserts into TLB that have been completed. Use as tlbindex % TLB_SIZE for the index of the next TLB line to use.
@@ -68,10 +71,23 @@ void add_to_tlb(unsigned char logical, unsigned char physical) {
 
 int main(int argc, const char *argv[])
 {
-  if (argc != 3) {
-    fprintf(stderr, "Usage ./virtmem backingstore input\n");
+
+  if (argc != 5) {
+    fprintf(stderr, "Usage ./virtmem -p 0/1 backingstore input\n");
     exit(1);
   }
+
+  if (strcmp(argv[1], "-p")) {
+    fprintf(stderr, "Please indicate the program flag: ./virtmem -p 0/1 backingstore input");
+    exit(1);
+  }
+
+  if (strcmp(argv[2], "0") && strcmp(argv[2], "1")) {
+    fprintf(stderr, "Please select a valid program mode such as 0 or 1: ./virtmem -p 0/1 backingstore input");
+    exit(1);
+  }
+
+  program_mode = atoi(argv[2]);
   
   const char *backing_filename = argv[1]; 
   int backing_fd = open(backing_filename, O_RDONLY);
