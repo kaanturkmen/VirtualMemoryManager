@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define TLB_SIZE 16
-#define PAGES 1024
+#define PAGES 256
 #define PAGE_MASK 1023
 
 // For the PAGE_MASK we can either take 1047552 (1111 1111 1100 0000 0000) and apply it (and operation) directly to the logical adress, or we can take it as 1023 (0000 0000 0011 1111 1111) and shift bits then apply.
@@ -89,11 +89,11 @@ int main(int argc, const char *argv[])
 
   program_mode = atoi(argv[2]);
   
-  const char *backing_filename = argv[1]; 
+  const char *backing_filename = argv[3]; 
   int backing_fd = open(backing_filename, O_RDONLY);
   backing = mmap(0, MEMORY_SIZE, PROT_READ, MAP_PRIVATE, backing_fd, 0); 
   
-  const char *input_filename = argv[2];
+  const char *input_filename = argv[4];
   FILE *input_fp = fopen(input_filename, "r");
   
   // Fill page table entries with -1 for initially empty table.
@@ -112,6 +112,10 @@ int main(int argc, const char *argv[])
   
   // Number of the next unallocated physical page in main memory
   unsigned char free_page = 0;
+
+  // Declaring pointers for the further memcpy call.
+  signed char *transfer_location_in_main_memory = 0;
+  signed char *data_location_in_backing_store = 0;
   
   while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
     total_addresses++;
@@ -132,7 +136,7 @@ int main(int argc, const char *argv[])
       
       // Page fault
       if (physical_page == -1) {
-          /* TODO */
+        /* TODO */
       }
 
       add_to_tlb(logical_page, physical_page);
