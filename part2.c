@@ -137,35 +137,7 @@ int main(int argc, const char *argv[])
       // Page fault
       if (physical_page == -1) {
 
-        // Incrementing page faults.
-        page_faults++;
-
-        // We will use a new physical page, so that we are making physical_page to show the free page number.
-        // Furthermore, after the assignment, we are incrementing the free_page value by 1 for the further use.
-        physical_page = free_page++;
-
-        // Transfer location in main memory is selected as starting position of main_memory array + (Physical Page * PAGE_SIZE)
-        // Physical Page * PAGE_SIZE would give us the number of next unallocated physical page.
-        // So that we will obtain a next place to write our data.
-        transfer_location_in_main_memory = main_memory + (physical_page * PAGE_SIZE);
-
-        // We will obtain data from backing store, to access the location of the data, we are getting the place where the backing
-        // data is stored. Then adding LOGICAL_PAGE * PAGE_SIZE to obtain where our data is located.
-        data_location_in_backing_store = backing + (logical_page * PAGE_SIZE);
-          
-        // Copy page from backing file into physical memory we are accessing the memory address where they are stored (backing pointer).
-        memcpy(transfer_location_in_main_memory, data_location_in_backing_store, PAGE_SIZE);
-
-        // If is active when program mode is selected as 1 (LRU Replacement: Least recently used replacement.)
-        // Else is active when program mode is selected as 0 (FIFO Replacement: First in first out replacement.)
-        if(program_mode) {
-          /* TODO IMPLEMENT LRU Replacement */
-          // Adding the new item to the pagetable.
-          pagetable[logical_page] = physical_page;
-        } else {
-          // Adding the new item to the pagetable.
-          pagetable[logical_page % PAGES] = physical_page;
-        }
+        // TODO - Implement functionality.
 
       }
 
