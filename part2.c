@@ -1,7 +1,6 @@
 /**
  * part2.c 
  */
-
 #include <stdio.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -11,7 +10,8 @@
 #include <string.h>
 
 #define TLB_SIZE 16
-#define PAGES 256
+#define PAGES 1024
+#define FRAMES 256
 #define PAGE_MASK 1023
 
 // For the PAGE_MASK we can either take 1047552 (1111 1111 1100 0000 0000) and apply it (and operation) directly to the logical adress, or we can take it as 1023 (0000 0000 0011 1111 1111) and shift bits then apply.
@@ -20,10 +20,59 @@
 #define OFFSET_BITS 10
 #define OFFSET_MASK 1023
 
-#define MEMORY_SIZE PAGES * PAGE_SIZE
+#define LOGICAL_MEMORY_SIZE  PAGES * PAGE_SIZE
+#define PHYSICAL_MEMORY_SIZE FRAMES * PAGE_SIZE
 
 // Max number of characters per line of input file to read.
 #define BUFFER_SIZE 10
+
+typedef struct{
+    int *elems;
+    int in;
+    int count;
+    int max_s;
+} queue_t;
+
+queue_t *queue;
+
+void queue_init(){
+    queue = (queue_t *)malloc(sizeof(queue_t));
+    queue->elems = (int *)malloc(sizeof(int) * FRAMES);
+    queue->max_s = FRAMES;
+    queue->in = 0;
+    queue->count = 0;
+}
+
+int queue_push(int i){
+    int return_value;
+    int max_s = queue->max_s;
+
+    if (queue->count >= max_s)
+    {
+        return_value = -1;
+    } else {
+        queue->elems[(queue->in + queue->count) % max_s] = i;
+        queue->count++;
+
+        return_value = queue->count;
+    }
+  
+    return return_value;
+}
+
+int queue_pop() {
+    int max_s = queue->max_s;
+    int return_value;
+
+    if (queue->count <= 0)
+        return_value = -1;
+    else{
+        return_value = queue->elems[queue->in % max_s];
+        queue->in++;
+        queue->count--;
+    }
+    return return_value;
+}
 
 struct tlbentry {
   unsigned char logical;
@@ -41,13 +90,12 @@ int tlbindex = 0;
 // pagetable[logical_page] is the physical page number for logical page. Value is -1 if that logical page isn't yet in the table.
 int pagetable[PAGES];
 
-signed char main_memory[MEMORY_SIZE];
+signed char main_memory[PHYSICAL_MEMORY_SIZE];
 
 // Pointer to memory mapped backing file
 signed char *backing;
 
-int max(int a, int b)
-{
+int max(int a, int b){
   if (a > b)
     return a;
   return b;
@@ -69,6 +117,16 @@ void add_to_tlb(unsigned char logical, unsigned char physical) {
   tlbindex++;
 }
 
+int replacement(){
+    if(program_mode) return lru_replacement();
+    else return fifo_replacement();
+}
+
+int fifo_replacement(){
+  return queue_pop();
+}
+void lru_replacement(){}
+
 int main(int argc, const char *argv[])
 {
 
@@ -88,10 +146,11 @@ int main(int argc, const char *argv[])
   }
 
   program_mode = atoi(argv[2]);
-  
+  queue_init();
+
   const char *backing_filename = argv[3]; 
   int backing_fd = open(backing_filename, O_RDONLY);
-  backing = mmap(0, MEMORY_SIZE, PROT_READ, MAP_PRIVATE, backing_fd, 0); 
+  backing = mmap(0, LOGICAL_MEMORY_SIZE, PROT_READ, MAP_PRIVATE, backing_fd, 0); 
   
   const char *input_filename = argv[4];
   FILE *input_fp = fopen(input_filename, "r");
@@ -130,18 +189,39 @@ int main(int argc, const char *argv[])
     // TLB hit
     if (physical_page != -1) {
       tlb_hits++;
-      // TLB miss
+    // TLB miss
     } else {
       physical_page = pagetable[logical_page];
       
       // Page fault
       if (physical_page == -1) {
 
-        // TODO - Implement functionality.
+        page_faults++;
 
+        if(free_page < FRAMES) physical_page = free_page++;
+        else physical_page = replacement();
+
+        transfer_location_in_main_memory = main_memory + (physical_page * PAGE_SIZE);
+
+        data_location_in_backing_store = backing + (logical_page * PAGE_SIZE);
+
+        memcpy(transfer_location_in_main_memory, data_location_in_backing_store, PAGE_SIZE);
+
+        for(int i = 0; i < PAGES; i++){
+          if(pagetable[i] == physical_page) pagetable[i] = -1;
+        }
+
+        pagetable[logical_page] = physical_page;
       }
 
+
       add_to_tlb(logical_page, physical_page);
+    }
+
+    if(program_mode) {
+      //
+    } else {
+      queue_push(physical_page);
     }
     
     int physical_address = (physical_page << OFFSET_BITS) | offset;
