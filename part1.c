@@ -61,6 +61,12 @@ int search_tlb(unsigned char logical_page) {
 
 /* Adds the specified mapping to the TLB, replacing the oldest mapping (FIFO replacement). */
 void add_to_tlb(unsigned char logical, unsigned char physical) {
+  for(int i = 0; i < TLB_SIZE; i++) {
+      if(tlb[i].physical == physical) {
+          tlb[i].logical = logical;
+          return;
+      }
+  }
   tlb[tlbindex % TLB_SIZE].logical = logical;
   tlb[tlbindex % TLB_SIZE].physical = physical;
   tlbindex++;
@@ -104,11 +110,12 @@ int main(int argc, const char *argv[])
   while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
     total_addresses++;
     int logical_address = atoi(buffer);
-
+    
      
     // Calculate the page offset and logical page number from logical_address */
     int offset = logical_address & OFFSET_MASK;
     int logical_page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
+    
     ///////
     
     int physical_page = search_tlb(logical_page);
@@ -126,8 +133,9 @@ int main(int argc, const char *argv[])
 
         // We will use a new physical page, so that we are making physical_page to show the free page number.
         // Furthermore, after the assignment, we are incrementing the free_page value by 1 for the further use.
-        physical_page = free_page++;
-
+        physical_page = free_page;
+        free_page = (free_page+1) % PAGES;
+        
         // Transfer location in main memory is selected as starting position of main_memory array + (Physical Page * PAGE_SIZE)
         // Physical Page * PAGE_SIZE would give us the number of next unallocated physical page.
         // So that we will obtain a next place to write our data.

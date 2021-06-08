@@ -26,57 +26,81 @@
 // Max number of characters per line of input file to read.
 #define BUFFER_SIZE 10
 
-typedef struct{
-    int *elems;
-    int in;
-    int count;
-    int max_s;
-} queue_t;
+int fifo_next_frame = 0;
 
-queue_t *queue;
+struct node {
+  int data;
+  int age;
+  struct node *next;
+};
 
-void queue_init(){
-    queue = (queue_t *)malloc(sizeof(queue_t));
-    queue->elems = (int *)malloc(sizeof(int) * FRAMES);
-    queue->max_s = FRAMES;
-    queue->in = 0;
-    queue->count = 0;
+typedef struct node node_t;
+
+node_t *list_head;
+int list_size = 0;
+
+void list_init(){
+  list_head = malloc(sizeof(node_t));
+  list_head->age = 0;
+  list_head->next = NULL;
 }
 
-int queue_push(int i){
-    int return_value;
-    int max_s = queue->max_s;
+int list_remove() {
+  node_t *current = list_head;
+  node_t *min_prev = list_head;
 
-    if (queue->count >= max_s)
-    {
-        return_value = -1;
-    } else {
-        queue->elems[(queue->in + queue->count) % max_s] = i;
-        queue->count++;
+  int min_age = -1;
+  while(current->next != NULL){
+      if(min_age<current->next->age){
+          min_age = current->next->age;
+          min_prev = current;
+      }
+      current = current->next;
+  }
 
-        return_value = queue->count;
-    }
+  node_t *temp = min_prev->next->next;
+  int value = min_prev->next->data;
+  free(min_prev->next);
+  min_prev->next = temp;
+  list_size--;
+  return value;
+}
+
+void list_increment_age(){
+  node_t *current = list_head; 
+  while(current->next != NULL){
+    current->next->age++;
+    current = current->next;
+  }
+}
+
+int list_add(int i){
+  list_increment_age();
+  node_t *current = list_head; 
+  while(current->next != NULL){
+      current = current->next;
+      if(current->data == i){
+        current->age = 0;
+        return 0; 
+      }
+  }
   
-    return return_value;
-}
+  node_t *new_node = malloc(sizeof(node_t));
+  new_node->age = 0;
+  new_node->data = i;
+  new_node->next = NULL;
+  current->next = new_node;
+  list_size++;
 
-int queue_pop() {
-    int max_s = queue->max_s;
-    int return_value;
+  if(list_size>FRAMES)
+    return list_remove();
 
-    if (queue->count <= 0)
-        return_value = -1;
-    else{
-        return_value = queue->elems[queue->in % max_s];
-        queue->in++;
-        queue->count--;
-    }
-    return return_value;
+  return 0;
 }
 
 struct tlbentry {
-  unsigned char logical;
-  unsigned char physical;
+  int logical;
+  int physical;
 };
 
 // Creating program mode variable to understand which algorithm is going to used.
@@ -102,7 +126,7 @@ int max(int a, int b){
 }
 
 /* Returns the physical address from TLB or -1 if not present. */
-int search_tlb(unsigned char logical_page) {
+int search_tlb(int logical_page) {
     for(int i = 0; i < TLB_SIZE; i++) {
       if(tlb[i].logical == logical_page) return tlb[i].physical;
     }
@@ -110,131 +134,163 @@ int search_tlb(unsigned char logical_page) {
     return -1;
 }
 
-/* Adds the specified mapping to the TLB, replacing the oldest mapping (FIFO replacement). */
-void add_to_tlb(unsigned char logical, unsigned char physical) {
-  tlb[tlbindex % TLB_SIZE].logical = logical;
-  tlb[tlbindex % TLB_SIZE].physical = physical;
+/*
+  Replace with new page if the given frame is used, 
+  if frame is never used by a page, add it to tlb.
+*/
+void add_to_tlb(int page, int frame) {
+   for(int i = 0; i < TLB_SIZE; i++) {
+      if(tlb[i].physical == frame) {
+          tlb[i].logical = page;
+          return;
+      }
+    }
+  tlb[tlbindex % TLB_SIZE].logical = page;
+  tlb[tlbindex % TLB_SIZE].physical = frame;
   tlbindex++;
 }
 
-int replacement(){
-    if(program_mode) return lru_replacement();
-    else return fifo_replacement();
-}
-
 int fifo_replacement(){
-  return queue_pop();
+  int return_value = -1;
+  for(int i =0;i<PAGES; i++){
+    if(pagetable[i] == fifo_next_frame){
+        return_value = i;
+        break;
+    }
+  }
+  
+  return return_value;
 }
-void lru_replacement(){}
 
-int main(int argc, const char *argv[])
-{
+int lru_replacement(){
+  return list_remove();
+}
 
-  if (argc != 5) {
-    fprintf(stderr, "Usage ./virtmem -p 0/1 backingstore input\n");
-    exit(1);
-  }
 
-  if (strcmp(argv[1], "-p")) {
-    fprintf(stderr, "Please indicate the program flag: ./virtmem -p 0/1 backingstore input");
-    exit(1);
-  }
-
-  if (strcmp(argv[2], "0") && strcmp(argv[2], "1")) {
-    fprintf(stderr, "Please select a valid program mode such as 0 or 1: ./virtmem -p 0/1 backingstore input");
-    exit(1);
-  }
-
-  program_mode = atoi(argv[2]);
-  queue_init();
-
-  const char *backing_filename = argv[3]; 
-  int backing_fd = open(backing_filename, O_RDONLY);
-  backing = mmap(0, LOGICAL_MEMORY_SIZE, PROT_READ, MAP_PRIVATE, backing_fd, 0); 
-  
-  const char *input_filename = argv[4];
-  FILE *input_fp = fopen(input_filename, "r");
-  
-  // Fill page table entries with -1 for initially empty table.
-  int i;
-  for (i = 0; i < PAGES; i++) {
-    pagetable[i] = -1;
-  }
-  
-  // Character buffer for reading lines of input file.
-  char buffer[BUFFER_SIZE];
-  
-  // Data we need to keep track of to compute stats at end.
-  int total_addresses = 0;
-  int tlb_hits = 0;
-  int page_faults = 0;
-  
-  // Number of the next unallocated physical page in main memory
-  unsigned char free_page = 0;
-
-  // Declaring pointers for the further memcpy call.
-  signed char *transfer_location_in_main_memory = 0;
-  signed char *data_location_in_backing_store = 0;
-  
-  while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
-    total_addresses++;
-    int logical_address = atoi(buffer);
-
-    // Calculate the page offset and logical page number from logical_address */
-    int offset = logical_address & OFFSET_MASK;
-    int logical_page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
-    ///////
+//Function for replacement procedure.
+//Works according to the user selection -p (FIFO or LRU)
+//Returns a frame to be used by the page
+int replacement(int page){
+    int old_page = 0;
     
-    int physical_page = search_tlb(logical_page);
-    // TLB hit
-    if (physical_page != -1) {
-      tlb_hits++;
-    // TLB miss
-    } else {
-      physical_page = pagetable[logical_page];
-      
-      // Page fault
-      if (physical_page == -1) {
+    if(program_mode) old_page = lru_replacement();
+    else old_page = fifo_replacement();
 
-        page_faults++;
+    int frame =  pagetable[old_page];
+    //Remove old page from page table
+    pagetable[old_page] = -1;
+   
+    return frame;
+}
 
-        if(free_page < FRAMES) physical_page = free_page++;
-        else physical_page = replacement();
-
-        transfer_location_in_main_memory = main_memory + (physical_page * PAGE_SIZE);
-
-        data_location_in_backing_store = backing + (logical_page * PAGE_SIZE);
-
-        memcpy(transfer_location_in_main_memory, data_location_in_backing_store, PAGE_SIZE);
-
-        for(int i = 0; i < PAGES; i++){
-          if(pagetable[i] == physical_page) pagetable[i] = -1;
-        }
-
-        pagetable[logical_page] = physical_page;
+int main(int argc, const char *argv[]){
+      if (argc != 5) {
+        fprintf(stderr, "Usage ./virtmem backingstore input -p 0/1\n");
+        exit(1);
       }
 
+      if (strcmp(argv[3], "-p")) {
+        fprintf(stderr, "Please indicate the program flag: ./virtmem backingstore input -p 0/1");
+        exit(1);
+      }
 
-      add_to_tlb(logical_page, physical_page);
-    }
+      if (strcmp(argv[4], "0") && strcmp(argv[4], "1")) {
+        fprintf(stderr, "Please select a valid program mode such as 0 or 1: ./virtmem backingstore input -p 0/1");
+        exit(1);
+      }
 
-    if(program_mode) {
-      //
-    } else {
-      queue_push(physical_page);
-    }
+      program_mode = atoi(argv[4]);
     
-    int physical_address = (physical_page << OFFSET_BITS) | offset;
-    signed char value = main_memory[physical_page * PAGE_SIZE + offset];
+      list_init();
+
+      const char *backing_filename = argv[1]; 
+      int backing_fd = open(backing_filename, O_RDONLY);
+      backing = mmap(0, LOGICAL_MEMORY_SIZE, PROT_READ, MAP_PRIVATE, backing_fd, 0); 
+      
+      const char *input_filename = argv[2];
+      FILE *input_fp = fopen(input_filename, "r");
+      
+      // Fill page table entries with -1 for initially empty table.
+      int i;
+      for (i = 0; i < PAGES; i++) {
+        pagetable[i] = -1;
+      }
+      
+      // Character buffer for reading lines of input file.
+      char buffer[BUFFER_SIZE];
+      
+      // Data we need to keep track of to compute stats at end.
+      int total_addresses = 0;
+      int tlb_hits = 0;
+      int page_faults = 0;
+      
+      // Number of the next unallocated physical page in main memory
+      int num_free_frame = FRAMES;
+     
+      // Declaring pointers for the further memcpy call.
+      signed char *transfer_location_in_main_memory = 0;
+      signed char *data_location_in_backing_store = 0;
+      
+      while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
+        total_addresses++;
+        int logical_address = atoi(buffer);
+
+        // Calculate the page offset and logical page number from logical_address */
+        int offset = logical_address & OFFSET_MASK;
+        int page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
+        ///////
     
-    printf("Virtual address: %d Physical address: %d Value: %d\n", logical_address, physical_address, value);
-  }
-  
-  printf("Number of Translated Addresses = %d\n", total_addresses);
-  printf("Page Faults = %d\n", page_faults);
-  printf("Page Fault Rate = %.3f\n", page_faults / (1. * total_addresses));
-  printf("TLB Hits = %d\n", tlb_hits);
-  printf("TLB Hit Rate = %.3f\n", tlb_hits / (1. * total_addresses));
-  
-  return 0;
+        int frame = search_tlb(page);
+      
+        // TLB hit
+        if (frame != -1) {
+          tlb_hits++;
+         
+        // TLB miss
+        } else {
+          frame = pagetable[page];
+          
+          // Page fault
+          if (frame == -1) {
+          
+            page_faults++;
+            
+            if(num_free_frame > 0) {
+              frame = FRAMES - num_free_frame;
+              num_free_frame--;  
+            }
+            else{
+              frame = replacement(page);
+            } 
+            fifo_next_frame = (fifo_next_frame+1)%FRAMES;
+
+            transfer_location_in_main_memory = main_memory + (frame * PAGE_SIZE);
+
+            data_location_in_backing_store = backing + (page * PAGE_SIZE);
+
+            memcpy(transfer_location_in_main_memory, data_location_in_backing_store, PAGE_SIZE);
+
+            pagetable[page] = frame;
+          }
+          add_to_tlb(page, frame);
+        }
+
+        //If LRU is selected, reset age of referenced page to 0 
+        if(program_mode) {
+          list_add(page);
+        } 
+             
+        int physical_address = (frame << OFFSET_BITS) | offset;
+        signed char value = main_memory[frame * PAGE_SIZE + offset];
+        
+        printf("Virtual address: %d Physical address: %d Value: %d\n", logical_address, physical_address, value);
+      }
+      
+      printf("Number of Translated Addresses = %d\n", total_addresses);
+      printf("Page Faults = %d\n", page_faults);
+      printf("Page Fault Rate = %.3f\n", page_faults / (1. * total_addresses));
+      printf("TLB Hits = %d\n", tlb_hits);
+      printf("TLB Hit Rate = %.3f\n", tlb_hits / (1. * total_addresses));
+      
+      return 0;
 }
